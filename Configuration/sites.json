@@ -1,0 +1,32 @@
+{
+  "lxdev10": {
+    "Name": "Luxembourg Dev",
+    "ID": "lxdev10",
+    "URL": "lududsvdtc1002",
+    "PortAPI": "8000"
+  },
+  "mtlab10": {
+    "Name": "Milton Pre-Prod",
+    "ID": "mtlab10",
+    "URL": "usmilsvetc1002",
+    "PortAPI": "8000"
+  },
+  "inlab10": {
+    "Name": "Chennai Pre-Prod",
+    "ID": "inlab10",
+    "URL": "inchesvetc1002",
+    "PortAPI": "8000"
+  },
+  "shlab10": {
+    "Name": "Shanghai Pre-Prod",
+    "ID": "shlab10",
+    "URL": "cnshasvetc1002",
+    "PortAPI": "8000"
+  },
+  "btlab10": {
+    "Name": "Bolton Pre-Prod",
+    "ID": "btlab10",
+    "URL": "cabolsvetc1002",
+    "PortAPI": "8000"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "TeamcenterBat": "E:\\plmapps\\",
+  "SourceSiteName": "__dev10",
+  "TargetSiteName": "Husky-Production",
+  "SQLiteDatabaseName": "E:\\Migration\\migration.db",
+  "Oracle": true,
+  "OracleUser": "infodba",
+  "OraclePassword": "infodba",
+  "OracleHost": "______VETC1001",
+  "OraclePort": "1521",
+  "OracleService": "__DEV10",
+  "ApiPort": 8000
+}

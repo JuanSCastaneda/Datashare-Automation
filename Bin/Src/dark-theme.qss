@@ -1,0 +1,132 @@
+/* ===== Base ===== */
+QWidget {
+    background-color: #121212;
+    color: #e0e0e0;
+    font-family: "Segoe UI", "Inter", "Arial";
+    font-size: 10.5pt;
+}
+
+/* ===== Buttons ===== */
+QPushButton {
+    background-color: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px 14px;
+}
+
+QPushButton:hover {
+    background-color: #2a2a2a;
+}
+
+QPushButton:pressed {
+    background-color: #3a3a3a;
+}
+
+QPushButton:disabled {
+    background-color: #181818;
+    color: #666;
+}
+
+/* ===== Inputs ===== */
+QLineEdit,
+QTextEdit,
+QPlainTextEdit,
+QSpinBox,
+QDoubleSpinBox,
+QComboBox {
+    background-color: #1a1a1a;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px;
+    selection-background-color: #3d6cff;
+}
+
+QLineEdit:focus,
+QTextEdit:focus,
+QPlainTextEdit:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QComboBox:focus {
+    border: 1px solid #3d6cff;
+}
+
+/* ===== ComboBox ===== */
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #1a1a1a;
+    border-radius: 8px;
+    selection-background-color: #3d6cff;
+}
+
+/* ===== Checkboxes & Radio ===== */
+QCheckBox,
+QRadioButton {
+    spacing: 6px;
+	
+}
+
+QCheckBox::indicator{
+    width: 14px;
+    height: 14px;
+	border: 1.5px solid #ffffff;
+    border-radius: 3px;
+}
+
+QRadioButton::indicator {
+	border: 1.5px solid #ffffff;
+    border-radius: 7px;
+}
+QCheckBox::indicator:checked{
+	background-color: #ffffff;
+}
+
+QRadioButton::indicator:checked{
+	background-color: #ffffff;
+
+}
+
+/* ===== Scrollbars ===== */
+QScrollBar:vertical {
+    background: transparent;
+    width: 10px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #2a2a2a;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #3a3a3a;
+}
+
+QScrollBar::add-line,
+QScrollBar::sub-line {
+    height: 0;
+}
+
+/* ===== Tooltips ===== */
+QToolTip {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+/* ===== Label Variants ===== */
+QLabel#header {
+    font-size: 18pt;
+    font-weight: 700;
+    color: #ffffff;
+    padding-bottom: 6px;
+}
+QLabel#subheader {
+    font-size: 13pt;
+    font-weight: 600;
+    color: #b5b5b5;
+}

@@ -1,0 +1,10 @@
+QLabel#header {
+    font-size: 18pt;
+    font-weight: bold;
+
+}
+
+QLabel#subheader {
+    font-size: 14pt;
+    font-weight: bold;
+}
