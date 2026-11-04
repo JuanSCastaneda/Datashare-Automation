@@ -196,6 +196,39 @@ class DatabaseEditor:
         else:
             logging.info("MigrationWSO already exists. No action.")
 
+        if "DereferencedDatasets" not in existing_tables:
+            logging.info("Creating DereferencedDatasets...")
+            cursor.execute("""
+                CREATE TABLE "DereferencedDatasets" (
+                    "instance_id"	TEXT NOT NULL,
+                    "item_id"	TEXT NOT NULL,
+                    "item_puid"	TEXT NOT NULL,
+                    "item_revision_id"	TEXT NOT NULL,
+                    "item_revision_puid"	TEXT NOT NULL,
+                    "relation_type"	TEXT NOT NULL,
+                    "dataset_type"	TEXT NOT NULL,
+                    "dataset_name"	TEXT NOT NULL,
+                    "dataset_puid"	TEXT NOT NULL,
+                    "imanfile_puid"	TEXT NOT NULL,
+                PRIMARY KEY("instance_id")
+                )""")
+        else:
+            logging.info("DereferencedDatasets already exists. No action.")
+
+        if "MissingImanfiles" not in existing_tables:
+            logging.info("Creating MissingImanfiles...")
+            cursor.execute("""
+                CREATE TABLE "MissingImanfiles" (
+                "imanfile_puid"	TEXT NOT NULL,
+                "volume_name"	TEXT NOT NULL,
+                "directory"	TEXT NOT NULL,
+                "filename"	TEXT NOT NULL,
+                "original_filename"	TEXT NOT NULL,
+                PRIMARY KEY("imanfile_puid")
+                )""")
+        else:
+            logging.info("MissingImanfiles already exists. No action.")
+
 
         connect.commit()
         connect.close()
@@ -615,11 +648,59 @@ class DatabaseEditor:
             connection.close()
 
 
+    def importPuidFile(self, csv: str | Path, table: str, commit=False):
+        """
+        Intakes a csv file as an input in the form puid, item_id, object_type, last_modified_date
+
+        :param csv: file path of csv input file
+        :param table: table name in SQLite that you wish to modify
+        """
+
+        objects: list[tuple[str]] = []
+
+        with open(csv, "r") as file:
+            if table == "MigrationWSO":
+                for line in file:
+                    splitline: list[str] = line.split(",")
+                    if len(splitline) != 4:
+                        print(f"Skipping '{line}' due to not satisfying 4 element constraint")
+                        continue
+                    puid, objectName, objectType, lastModifiedDate = splitline
+                    objects.append((puid, puid, objectName, objectType, lastModifiedDate ))
+
+            elif table == "MigrationItems":
+                for line in file:
+                    splitline: list[str] = line.split(",")
+                    if len(splitline) != 5:
+                        print(f"Skipping '{line}' due to not satisfying 5 element constraint")
+                        continue
+                    puid, itemId, objectName, objectType, lastModifiedDate = splitline
+                
+                    objects.append((puid, itemId, objectName, objectType, lastModifiedDate))
+
+        try:
+            connection, cursor = self.connect()
+            puids = {i[0] for i in cursor.execute(f"SELECT puid FROM {table}").fetchall()}
+            existingCount = sum([1 for i in objects if i[0] in puids])
+            proposedObjects = len(objects)
+
+            logging.info(f"{existingCount} objects were already in {table}. Ignoring...")
+            logging.info(f"Inserting {proposedObjects - existingCount} new lines to the database")
+
+            query = f"INSERT or INGORE INTO {table} (puid, item_id, object_name, object_name, object_type, last_mod_date) VALUES (?,?,?,?,?)"
+            cursor.exectutemany(query, objects)
+
+        finally:
+            if commit:
+                connection.commit()
+            connection.close()
+
+
     def getItemIdFromErrorCode(self, code: int, limit:int = 50, table:str ="FailedItems"):
         """
-        ### Code: Error code as an int
-        ### limit: Limit the number of items queried from Table
-        ### Table: Source table to query, FailedItems by default
+        :param code: Error code as an int
+        :param limit: Limit the number of items queried from Table
+        :param table: Source table to query, FailedItems by default
         """
         connection, cursor = self.connect()
         data = [i[0] for i in cursor.execute(f"SELECT item_id FROM {table} WHERE error = {int(code)} LIMIT {limit}").fetchall()]

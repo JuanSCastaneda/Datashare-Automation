@@ -65,6 +65,17 @@ def getPatternedInput(pattern_str: str) -> str:
             print("Please provide valid string input")
 
 
+def getFilepathInput() -> Path:
+    while True:
+        ui = input("Provide File Path: ")
+        path = Path(ui)
+        if path.exists() and path.is_file():
+            return path
+        else:
+            print("The provided path was not a file or does not exist.")
+
+
+
 def itemDeltaProcedure(editor: OracleEditor):
 
     print("This procedure requires shifting all items from MigrationItems2 to MigrationItems. Ensure no processes are writing the database.")
@@ -283,7 +294,6 @@ def remapVolumes(editor: OracleEditor):
 
 
 def updateStatuses(editor: OracleEditor):
-
     print("Select table: ")
     options = { 1: "MigrationItems", 
                 #2: "MigrationWSO",
@@ -320,6 +330,37 @@ def updateStatuses(editor: OracleEditor):
     if ui:
         editor.changeImportStatus(oldStatus, newStatus, table=table)
 
+
+def addObjectsViaCSV(editor: OracleEditor):
+
+    print("Which table do you want to add to?")
+    options = {1: "MigrationItems",
+               2: "MigrationWSO", 
+               3: "Cancel"}
+
+    ui = getInputLoop(options)
+    if options[ui] == "Cancel":
+        return
+
+    match (ui):
+        case 1:     # MigrationItems
+            ui = getConfirmation("Is your CSV in the following format?\n\n\t[puid, item_id, object_name, object_type, last_mod_date]\n\nWithout a header?")
+
+            if ui:
+                csvPath: Path = getFilepathInput()
+                editor.importPuidFile(csvPath, "MigrationItems", True)
+            else:
+                print("Correct the format of your input file. Ending.")
+
+        case 2:     # MigrationWSO
+            ui = getConfirmation("Is your CSV in the following format?\n\n\t[puid, object_name, object_type, last_mod_date]\n\nWithout a header?")
+
+            if ui:
+                csvPath: Path = getFilepathInput()
+                editor.importPuidFile(csvPath, "MigrationWSO", True)
+            else:
+                print("Correct the format of your input file. Ending.")
+
     
 
 def end() -> bool:
@@ -339,11 +380,10 @@ def main() -> None:
 
     options: dict[int, Callable] = {
                1: Callable("Initialize Tables", oracleEditor.createTables),
-               #2: Callable("Populate Items for The First Time", oracleEditor.populateMigrationItems),
                2: Callable("Bulk Change Import Statuses", updateStatuses, oracleEditor),
                3: Callable("Perform an Item Delta", itemDeltaProcedure, oracleEditor),
                4: Callable("Perform a Workspace Object Delta", wsoDeltaProcedure, oracleEditor),
-               5: Callable("Shift Tables", shiftTables, oracleEditor),
+               5: Callable("Insert Items Via CSV", addObjectsViaCSV, oracleEditor),
                6: Callable("Print Volume Configuration", oracleEditor.printVolumeInfo),
                7: Callable("Remap Volume Paths", remapVolumes, oracleEditor),
                8: Callable("Mark Migration Edge Cases", edgeCaseMark, oracleEditor),

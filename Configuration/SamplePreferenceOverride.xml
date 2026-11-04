@@ -1,0 +1,7 @@
+<preference name="TC_idsm_site_nodes" type="String" array="true" disabled="false" protectionScope="Site" envEnabled="false">
+	<preference_description>none</preference_description>
+	<context name="Teamcenter">
+		<value>PROVIDE NAME</value>
+		<value>NODE NAME</value>
+	</context>
+</preference>

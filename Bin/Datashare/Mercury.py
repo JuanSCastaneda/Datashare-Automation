@@ -179,7 +179,7 @@ class Mercury:
                 '-include_pfmembers',
                 rf'-report={self.BATCH.REPORT_FILE}',
                 "-classoffile=Tagstring",
-                f'-optionset={self.TRANSFER_OPT_SET}',
+                f'-optionset={self.TRANSFER_OPTION_SET}',
                 "-continue_on_error",
                 rf'-filename={self.BATCH.PUID_FILE}',
                 '-oaat']
@@ -263,7 +263,7 @@ class Mercury:
                 '-include_pfmembers',
                 rf'-report={self.BATCH.REPORT_FILE}',
                 "-classoffile=Tagstring",
-                f'-optionset={self.TRANSFER_OPT_SET}',
+                f'-optionset={self.TRANSFER_OPTION_SET}',
                 "-continue_on_error",
                 rf'-filename={self.BATCH.PUID_FILE}']
 
