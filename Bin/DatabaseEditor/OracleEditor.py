@@ -99,9 +99,10 @@ class OracleEditor(DatabaseEditor):
 
                 WHERE po.rowning_siteu is NULL"""
 
-            query += f"\n AND wso.pobject_type = '{object_type}'"
-
-           
+            if isinstance(object_type, list):
+                query += f"\n AND wso.pobject_type IN ({",".join([f"'{oType}'" for oType in object_type])})"
+            else:
+                query += f"\n AND wso.pobject_type = '{object_type}'"           
 
             if start_date_range is not None:
                 query += f"\n AND pomapp.plast_mod_date >= TO_DATE('{start_date_range}', 'YYYY-MM-DD HH24:MI:SS')"
@@ -118,7 +119,10 @@ class OracleEditor(DatabaseEditor):
 
             query += "\n ORDER BY pomapp.plast_mod_date ASC"
 
-            logging.info(f"Querying database for all new {object_type}")
+            if isinstance(object_type, list):
+                logging.info(f"Querying database for all new {", ".join(object_type)}")
+            else:
+                logging.info(f"Querying database for all new {object_type}")
             
             logging.info(query)
             start = datetime.now()

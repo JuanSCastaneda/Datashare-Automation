@@ -149,7 +149,7 @@ def wsoDeltaProcedure(editor: OracleEditor):
     """
     
     print("Which valid workspace object do you want to add? ")
-    options = {1: "UGCAMPTP",
+    options = {1: "ALL",
                2: "HuskyECO",
                3: "CAEMesh",
                4: "CAEGeom",
@@ -157,7 +157,8 @@ def wsoDeltaProcedure(editor: OracleEditor):
                6: "NXMotion",
                7: "NXSimulation",
                8: "CAEResults",
-               9: "Back"}
+               9: "UGCAMPTP",
+               10: "Back"}
 
     
     ui = getInputLoop(options)
@@ -165,6 +166,12 @@ def wsoDeltaProcedure(editor: OracleEditor):
     objectType = options[ui]
     if objectType == "Back":
         return
+
+    elif objectType == "ALL":
+        objectType: list = list(options.values())
+        objectType.remove("Back")
+        objectType.remove("ALL")
+    
 
     print("Which method for calculating date ranges do you want to use? ")
     options = { 1: "Use Calculated Start Date to Present",  # None-None
