@@ -210,7 +210,7 @@ class OracleEditor(DatabaseEditor):
     def getItems(self, start_date_range: None | str = None,
                       end_date_range: None | str = None,
                       source_table: str = "MigrationItems",
-                      scoped_types = ('CAEAnalysis', 'CAEGeometry', 'CAEModel', 'Item', 'EItem', 'SItem', 'MENCMachining', 'Document', 'HuskyECO')) -> tuple[list[tuple[str]]]:
+                      scoped_types = ('CAEAnalysis', 'CAEGeometry', 'CAEModel', 'Item', 'EItem', 'SItem', 'MENCMachining', 'Document')) -> tuple[list[tuple[str]]]:
         """
         Performs Delta data operation. Uses the maximum last mod date from the last delta. Ensure that all columns have been migrated to one table
         Args:

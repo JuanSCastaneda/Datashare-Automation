@@ -14,7 +14,7 @@ class Callable:
     def __str__(self):
         return self.name
 
-    def exectute(self):
+    def execute(self):
         if self.editor == None:
             output = self.function()
         else:
@@ -403,12 +403,12 @@ def main() -> None:
         userInput = getInputLoop(options)
 
         if options[userInput].name == "Cancel":
-            if options[userInput].exectute():
+            if options[userInput].execute():
                 break
 
         else:
 
-            options[userInput].exectute()
+            options[userInput].execute()
             loop = getConfirmation("Do you wish to perform any other changes")
 
 

@@ -648,7 +648,7 @@ class DatabaseEditor:
             connection.close()
 
 
-    def importPuidFile(self, csv: str | Path, table: str, commit=False):
+    def importPuidFile(self, csvname: str | Path, table: str, commit=False):
         """
         Intakes a csv file as an input in the form puid, item_id, object_type, last_modified_date
 
@@ -657,25 +657,26 @@ class DatabaseEditor:
         """
 
         objects: list[tuple[str]] = []
-
-        with open(csv, "r") as file:
+        
+        import csv
+        with open(csvname, "r") as file:
+            reader = csv.reader(file)
             if table == "MigrationWSO":
-                for line in file:
-                    splitline: list[str] = line.split(",")
-                    if len(splitline) != 4:
-                        print(f"Skipping '{line}' due to not satisfying 4 element constraint")
+                for row in reader:
+                    if len(row) != 4:
+                        print(f"Skipping {row} due to not satisfying 4 element constraint")
                         continue
-                    puid, objectName, objectType, lastModifiedDate = splitline
-                    objects.append((puid, puid, objectName, objectType, lastModifiedDate ))
+
+                    puid, objectName, objectType, lastModifiedDate = row
+                    objects.append((puid, puid, objectName, objectType, lastModifiedDate))
 
             elif table == "MigrationItems":
-                for line in file:
-                    splitline: list[str] = line.split(",")
-                    if len(splitline) != 5:
-                        print(f"Skipping '{line}' due to not satisfying 5 element constraint")
+                for row in reader:
+                    if len(row) != 5:
+                        print(f"Skipping {row} due to not satisfying 5 element constraint")
                         continue
-                    puid, itemId, objectName, objectType, lastModifiedDate = splitline
-                
+
+                    puid, itemId, objectName, objectType, lastModifiedDate = row                
                     objects.append((puid, itemId, objectName, objectType, lastModifiedDate))
 
         try:
@@ -687,8 +688,8 @@ class DatabaseEditor:
             logging.info(f"{existingCount} objects were already in {table}. Ignoring...")
             logging.info(f"Inserting {proposedObjects - existingCount} new lines to the database")
 
-            query = f"INSERT or INGORE INTO {table} (puid, item_id, object_name, object_name, object_type, last_mod_date) VALUES (?,?,?,?,?)"
-            cursor.exectutemany(query, objects)
+            query = f"INSERT or IGNORE INTO {table} (puid, item_id, object_name, object_type, last_mod_date) VALUES (?,?,?,?,?)"
+            cursor.executemany(query, objects)
 
         finally:
             if commit:
