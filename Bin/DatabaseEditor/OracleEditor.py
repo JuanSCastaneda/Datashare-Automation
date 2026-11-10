@@ -47,31 +47,19 @@ class OracleEditor(DatabaseEditor):
         return connection, cursor
 
 
-    def getWorkspaceObjects(self, object_type: str,
+    def getWorkspaceObjects(self, object_type: str | list[str],
                             start_date_range: None | str = None,
                             end_date_range: None | str = None,
-                            valid_types: tuple[str] = ("UGCAMPTP", "HuskyECO", "CAEMesh", "CAEGeom", "CAESolution", "NXMotion", "NXSimulation", "CAEResults"),
                             source_table: str = "MigrationWSO"):
         """
         Gathers workspace objects in the form:
         (object_name, object_name, object_type, last_mod_date, puid)
 
-        Valid Input Types Include:
-        UGCAMPTP, HuskyECO, CAEMesh, CAEGeom, CAESolution, NXMotion, NXSimulation
-
         """
         new = []
         modified = []
 
-        # CHECKS
-        # ================================================================================================================= #
-        # INITIAL TYPE CHECK
-        if object_type not in valid_types:
-            logging.error(f"The input object type is invalid: {object_type}. It should be among {valid_types}")
-            return modified, new
-        
         try:
-
             liteConnection = sqlite3.connect(self.SQLITE3)
             liteCursor = liteConnection.cursor()
             existing = {k: v for k, v in liteCursor.execute(f"SELECT puid, last_mod_date FROM {source_table}").fetchall()}

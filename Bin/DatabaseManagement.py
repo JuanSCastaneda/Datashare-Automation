@@ -158,7 +158,8 @@ def wsoDeltaProcedure(editor: OracleEditor):
                7: "NXSimulation",
                8: "CAEResults",
                9: "UGCAMPTP",
-               10: "Back"}
+               10: "Folder",
+               11: "Back"}
 
     
     ui = getInputLoop(options)
