@@ -26,8 +26,8 @@ class UpgradePreChecker:
 
         # DATASHARE CONFIGURATIONS
         self.server: str = data['SourceSiteName']
-        self.u = data['OracleUser'] if u is None else u
-        self.p = data['OraclePassword'] if p is None else p
+        self.u = data['User'] if u is None else u
+        self.p = data['Password'] if p is None else p
 
         self.stagingDir = staging_dir + "PreUpgradeChecks" if staging_dir[-1] == "\\" else staging_dir + "\\PreUpgradeChecks"
         if not Path(self.stagingDir).exists():

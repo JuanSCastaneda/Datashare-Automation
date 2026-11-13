@@ -4,54 +4,40 @@ import os
 from datetime import datetime
 import re
 from pathlib import Path
+import json
 
 class DatabaseEditor:
-    def __init__(self, sqlite3_database: str= 'migration.db'):
+    def __init__(self, configuration_subpath: str= r"Configuration\configuration.json"):
         # MAPPING TO MIG_HOME
+
         try:
-            self.MIG_HOME = migHome = os.environ['MIG_HOME']
-            logging.info(f"Using database in {migHome}\\{sqlite3_database}")
-            
+            self.MIG_HOME = migHome = Path(os.environ['MIG_HOME'])
+            logging.info(f"Using database writen in {migHome}\\{configuration_subpath}")
+            self.confs = migHome / configuration_subpath
+
+            with open(self.confs, "r") as file:
+                data = json.load(file)
+                self.db = data["SQLiteDatabasePath"]
+
         except:
-            logging.warning(f"Could not find MIG_HOME in Environment Variables. Defaulting to {sqlite3_database} in local directory.")
-            self.MIG_HOME = None
+            logging.warning(f"Could not find MIG_HOME in Environment Variables")
+            raise RuntimeError("Please define a system Variable MIG_HOME with your main directory.")
         
-        self.SQLITE3: str = self.MIG_HOME + '\\' + sqlite3_database if  self.MIG_HOME is not None else sqlite3_database
 
     def connect(self) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
-        connection = sqlite3.connect(self.SQLITE3)
+        connection = sqlite3.connect(self.db)
         cursor = connection.cursor()
         return connection, cursor
 
 
     def createTables(self):
         """
-        Creates AuditFiles, FailedItems, MigrationBatchs, MigrationItems, Volumes
+        Creates AuditFiles, FailedItems, MigrationBatches, MigrationItems, Volumes
         in SQLite3 Database
         """
 
-        connect = sqlite3.connect(self.SQLITE3)
-        cursor = connect.cursor()
-
+        connect, cursor= self.connect(self.db)
         existing_tables = [i[0] for i in cursor.execute("SELECT tbl_name FROM sqlite_master WHERE type = 'table'").fetchall()]
-
-        # if "AuditFiles" not in existing_tables:
-        # logging.info("Creating AuditFiles Table...")
-        # cursor.execute('''
-        #     CREATE TABLE IF NOT EXISTS AuditFiles (
-        #         puid	TEXT,
-        #         status	TEXT,
-        #         owning_site	TEXT,
-        #         template	TEXT,
-        #         directory	TEXT,
-        #         subfolder	TEXT,
-        #         filename	TEXT,
-        #         PRIMARY KEY(puid)
-        #         )
-        #     ''')
-        # else:
-        #   logging.info("AuditFiles already exists. No action.")
-
 
         if "FailedItems" not in existing_tables:
             logging.info("Creating FailedItems Table...")
@@ -71,10 +57,10 @@ class DatabaseEditor:
         else:
             logging.info("FailedItems already exists. No action.")
 
-        if "MigrationBatchs" not in existing_tables:
-            logging.info("Creating MigrationBatchs Table...")
+        if "MigrationBatches" not in existing_tables:
+            logging.info("Creating MigrationBatches Table...")
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS MigrationBatchs (
+                CREATE TABLE IF NOT EXISTS MigrationBatches (
                     batch_Id	TEXT NOT NULL,
                     run_start_date	TEXT NOT NULL,
                     run_end_date	TEXT,
@@ -83,12 +69,13 @@ class DatabaseEditor:
                     report_filename	REAL,
                     batch_size	INT,
                     duration	INTEGER,
+                    success_rate REAL,
                     PRIMARY KEY(batch_Id)
                 )
             '''
             )
         else:
-            logging.info("MigrationBatchs already exists. No action.")
+            logging.info("MigrationBatches already exists. No action.")
         
         if "MigrationItems" not in existing_tables:
             logging.info("Creating MigrationItems Table...")
@@ -201,6 +188,7 @@ class DatabaseEditor:
             cursor.execute("""
                 CREATE TABLE "DereferencedDatasets" (
                     "instance_id"	TEXT NOT NULL,
+                    "date_added"   TEXT NOT NULL,
                     "item_id"	TEXT NOT NULL,
                     "item_puid"	TEXT NOT NULL,
                     "item_revision_id"	TEXT NOT NULL,
@@ -249,8 +237,7 @@ class DatabaseEditor:
 
         """
 
-        connect = sqlite3.connect(self.SQLITE3)
-        cursor = connect.cursor()
+        connect, cursor= self.connect(self.db)
 
         logging.info("Querying Out of Scope Items")
         oosItemsCount = cursor.execute(f"""SELECT object_type, COUNT(*) FROM {table}
@@ -290,8 +277,7 @@ class DatabaseEditor:
         logging.info("Querying the source site for its items from TargetSnapshot...")
         start = datetime.now()
 
-        connect = sqlite3.connect(self.SQLITE3)
-        cursor = connect.cursor()
+        connect, cursor= self.connect(self.db)
         sourceItemIds: set[str] = {i[0] for i in cursor.execute("SELECT item_id FROM TargetSnapshot").fetchall()}
 
         end = datetime.now()
@@ -315,8 +301,7 @@ class DatabaseEditor:
 
     def restoreTransferedStatuses(self):
 
-        connection = sqlite3.connect(self.SQLITE3)
-        cursor = connection.cursor()
+        connection, cursor = self.connect()
 
         countFailed = cursor.execute("""SELECT COUNT(*) FROM MigrationItems i
                                     JOIN TargetSnapshot ts ON ts.item_id = i.item_id
@@ -365,8 +350,7 @@ class DatabaseEditor:
 
 
     def shiftTables(self, status, proportion:str ="1:1", commit=False):
-        connection: sqlite3.Connection = sqlite3.connect(self.SQLITE3)
-        cursor: sqlite3.Cursor = connection.cursor()
+        connection, cursor = self.connect()
         conditions = {"NULL": "WHERE import_status IS NULL",
                              "FAILED": "WHERE import_status LIKE 'FAILED%'",
                              "ALL": ""}
@@ -471,7 +455,7 @@ class DatabaseEditor:
     def updateDelta(self, modified: list, new: list, source_table: str = "MigrationItems"):
             nUpdatedItems: int = len(modified)  
             nNewItem: int = len(new)
-            with sqlite3.connect(self.SQLITE3) as liteConnection:
+            with sqlite3.connect(self.db) as liteConnection:
                 liteCursor = liteConnection.cursor()
                 logging.info(f"#Updated Modified Items since last refresh: {nUpdatedItems}")
                 start = datetime.now()
@@ -517,7 +501,7 @@ class DatabaseEditor:
         Param
             - modified: List of modified folders with inputs in the form: (object_name, object_type, last_mod_date, puid)
         """
-        with sqlite3.connect(self.SQLITE3) as liteConnection:
+        with sqlite3.connect(self.db) as liteConnection:
             liteCursor = liteConnection.cursor()
             start = datetime.now()
             logging.info("Updating modified objects... ")

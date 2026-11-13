@@ -162,7 +162,7 @@ class MigCollector:
             
         connect = sqlite3.connect(self.DB)
         cursor = connect.cursor()
-        batch_data = [i for i in cursor.execute(f"SELECT batch_id, duration, run_status FROM MigrationBatchs ORDER BY ROWID DESC LIMIT {n}").fetchall()]
+        batch_data = [i for i in cursor.execute(f"SELECT batch_id, duration, run_status FROM MigrationBatches ORDER BY ROWID DESC LIMIT {n}").fetchall()]
         
         batches: dict[str, dict]= {}
         for batID, duration, runStatus in batch_data:
@@ -229,7 +229,7 @@ class MigCollector:
 
 
 
-            avgRateWSO = cursor.execute("SELECT SUM(success_rate) / COUNT(*) FROM MigrationBatchs WHERE batch_id LIKE '%WSO_%'").fetchone()[0]
+            avgRateWSO = cursor.execute("SELECT SUM(success_rate) / COUNT(*) FROM MigrationBatches WHERE batch_id LIKE '%WSO_%'").fetchone()[0]
             
             workspaceObjects = cursor.execute("""
             SELECT 
@@ -307,7 +307,7 @@ class MigCollector:
         
         with sqlite3.connect(self.DB) as connection:
             cursor = connection.cursor()
-            data = cursor.execute(f"""SELECT batch_Id, run_start_date, run_end_date, run_status, batch_size, duration FROM MigrationBatchs
+            data = cursor.execute(f"""SELECT batch_Id, run_start_date, run_end_date, run_status, batch_size, duration FROM MigrationBatches
                                 WHERE duration IS NOT NULL AND run_status LIKE '{status}%'""").fetchall()
 
         batchDetails = dict()

@@ -1,13 +1,13 @@
 {
-  "TeamcenterBat": "E:\\plmapps\\",
-  "SourceSiteName": "__dev10",
-  "TargetSiteName": "Husky-Production",
-  "SQLiteDatabaseName": "E:\\Migration\\migration.db",
-  "Oracle": true,
-  "OracleUser": "infodba",
-  "OraclePassword": "infodba",
-  "OracleHost": "______VETC1001",
-  "OraclePort": "1521",
-  "OracleService": "__DEV10",
+  "TeamcenterBat": "D:\\APPS\\Siemens\\TeamcenterXXXX\\tc_root\\tc_menu",
+  "SourceSiteName": "Source",
+  "TargetSiteName": "Target",
+  "SQLiteDatabasePath": "D:\\Migration\\migration.db",
+  "DBMS": "Oracle",
+  "User": "infodba",
+  "Password": "infodba",
+  "Host": "Hostname",
+  "Port": "1521",
+  "Service": "DEV",
   "ApiPort": 8000
 }

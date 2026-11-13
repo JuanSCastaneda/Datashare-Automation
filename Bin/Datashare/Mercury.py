@@ -5,10 +5,12 @@ and send objects between source and target sites.
 
 """
 
-import sqlite3
 import re
 import subprocess 
 import time
+from Datashare.QueryTeamcenter import *
+from Datashare.QueryMigration import *
+from Datashare.Exceptions import *
 from Datashare.Batch import Batch
 from Datashare.Item import Item
 from HelperMethods.HelperMethods import *
@@ -25,27 +27,26 @@ class Mercury:
             data = json.load(file)
 
         # DATABASE MANAGEMENT SYSTEM VARIABLES
-        self.DBMgtSystem = 'Oracle' if data['Oracle'] == True else 'MSSQL'
+        self.DBMgtSystem = data['DBMS'].upper().strip()
 
+        user = data['User']
+        password = data['Password']
+        host = data['Host']
+        port = data['Port']
+        serviceName = data['ServiceName']
         match self.DBMgtSystem:
-            case 'Oracle':
-                self.ORACLE_USER = data['OracleUser']
-                self.ORACLE_PASSOWRD = data['OraclePassword']
-                self.ORACLE_HOST = data['OracleHost']
-                self.ORACLE_PORT = data['OraclePort']
-                self.ORACLE_SERVICE = data['OracleService']
-
+            case 'ORACLE':
+                self.queryTeamcenter = QueryTeamcenter(user, password, host, port, serviceName, DatabaseManagementSystem.ORACLE)
             case 'MSSQL':
-                self.ORACLE_USER = ''
-                self.ORACLE_PASSOWRD = ''
-                self.ORACLE_HOST = ''
-                self.ORACLE_PORT = ''
-                self.ORACLE_SERVICE = ''
+                self.queryTeamcenter = QueryTeamcenter(user, password, host, port, serviceName, DatabaseManagementSystem.MSSQL)
+
+        databasePath = data['SQLiteDatabasePath']
+        self.queryMigration: QueryMigration = QueryMigration(databasePath)
 
         # DATASHARE CONFIGURATIONS
         self.SOURCE: str = data['SourceSiteName']
         self.TARGET: str = data['TargetSiteName']
-        self.DB: str = data['SQLiteDatabaseName']
+        
         self.BATCH_SIZE: int = batch_size
         self.OAAT: bool = oaat
         self.ADAPTING_OAAT: bool = adapting_oaat
@@ -124,42 +125,7 @@ class Mercury:
         gc.collect()
 
 
-    def connect(self) -> tuple:
-        """
-        A wrapper class for connecting to the database with extra verboseness
-        
-        ### Parameters
-            - None
-        ### Returns
-            - Instance of sqlite3.connection
-            - Instance of sqlite3.connection.cursor
-            
-        """
-        logging.info(f"Connecting to {self.DB}")
-        N = 5
-        for i in range(N):
-            
-            try:
-                connection = sqlite3.connect(self.DB, timeout=5)
-                cursor = connection.cursor()
-
-                break
-            
-            except sqlite3.OperationalError as ope:
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i}/{N}]")
-                time.sleep(5)
-                connection = None
-                cursor = None
-        
-            except Exception as e:
-                connection = None
-                cursor = None
-                logging.info(f"Failed to connect with the following SQLite3 error: {e}")
-
-        return connection, cursor
-
-    
-    def datashareOAAT(self):
+    def datashareOAAT(self) -> int:
         """
         Datashare performs the operation of sending the written files to Teamcenter's data_share utility,
         records the time stamp items were sent, and calculates their duration. 
@@ -241,17 +207,17 @@ class Mercury:
 
         if err:
             logging.info(f"ERROR: {err} {out.decode("utf-8")}")
+
+        return process.returncode
             
 
-    def datashare(self):
+    def datashare(self) -> int:
         """
         Datashare performs the operation of sending the written files to Teamcenter's data_share utility,
         records the time stamp items were sent, and calculates their duration. 
-    
-        ### Parameters
-            - None
-        ### Returns
-            - None
+
+        :Returns ReturnCode: passed as an int
+
         """
         datashareCmd = [
                 'data_share',
@@ -297,283 +263,15 @@ class Mercury:
         if err:
             logging.info(f"ERROR: {err} {out.decode("utf-8")}")
 
-
-    def getTime(self, string: str) -> datetime:
-        """
-        GetTime reads a string in the form YYYY-MM-DD=HH-MM-SS and returns a datetime instance.
-        
-        :param: string: in the form 'YYYY-MM-DD=HH-MM-SS'
-
-        :returns: Datetime Object
-
-        """
-        year, month, day, hour, minute, second = re.split("[=-]", string)
-        arguments = [int(i) for i in [year, month, day, hour, minute, second]]
-        return datetime(*arguments)
-
+        return process.returncode
     
-    def getLastNSuccessRates(self, N: int) -> list[float]:
+    # def getLastNSuccessRates(self, N: int) -> list[float]:
 
-        connection, cursor = self.connect()
-        data = [i[0] for i in cursor.execute(f"SELECT success_rate FROM MigrationBatchs ORDER BY ROWID DESC LIMIT {N}").fetchall()]
-        connection.close()
+    #     connection, cursor = self.connect()
+    #     data = [i[0] for i in cursor.execute(f"SELECT success_rate FROM MigrationBatches ORDER BY ROWID DESC LIMIT {N}").fetchall()]
+    #     connection.close()
 
-        return data
-    
-
-    def formatTime(self, instant: datetime) -> str:
-        """
-        Returns a string in the form YYYY-MM-DD=HH-MM-SS with the current time
-        
-        :param: None
-
-        :returns: String
-
-        """
-        return instant.strftime("%Y-%m-%d=%H-%M-%S")
-        
-    
-
-    def updateBatchTable(self, cursor) -> None:
-        """
-        ## Update Batch Table
-        Inserts the following row in the MigrationBatchs table:
-
-        [Batch ID | Start Time | End Time | Status | List of Items File | Repor File | Size | Duration]
-
-        ### Parameters
-            - SQLite3.cursor
-        
-        ### Returns
-            - None
-        """
-        
-        batch: Batch = self.BATCH
-        start: str = self.formatTime(batch.START)
-        end: str = self.formatTime(batch.END)
-        
-        logging.info(f"Batch Status: {batch.STATUS}")
-        logging.info("Updating MigrationBatchs Table... ")
-
-
-        N = 5
-        for i in range(1, N + 1):
-            
-            try:
-                cursor.execute('''
-                INSERT INTO MigrationBatchs
-                (batch_id, run_start_date, run_end_date, run_status, list_of_ids_filename, report_filename, batch_size, duration, success_rate)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (batch.BATCH_ID, start, end, batch.STATUS, batch.ITEM_ID_FILE, batch.REPORT_FILE, batch.BATCH_SIZE, batch.DURATION, batch.SUCCESS_RATE))
-                                
-                break
-            
-            except sqlite3.OperationalError as ope:
-                if i == 5:
-                    raise RuntimeError("The database was still locked after 5 tries")
-                
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i + 1}/{N}]")
-                time.sleep(5)
-
-        
-    def updateWSOasSent(self, cursor) -> None :
-        """
-        ## Update Items Table
-        Updates rows in the MigrationWSO table to add:
-
-        [ Import Status | Batch ID | Datashare Date | Size | Duration]
-
-        Where item.PUID is in self.BATCH.ITEMS.values()
-
-        ### Parameters
-            - SQLite3.cursor
-        
-        ### Returns
-            - None
-        """
-        
-        logging.info(f"Updating {len(self.BATCH.ITEMS)} Processed Items in The {self.SOURCE_TABLE} Table...")
-        
-        N = 5
-        for i in range(1, N + 1):
-            try:
-                cursor.executemany(f'''
-                        UPDATE {self.SOURCE_TABLE}
-                        SET import_status = ?, batch_id = ?, data_share_date = ?, transfer_time = ? 
-                        WHERE puid = ?
-                    ''', [("SENT", self.BATCH.BATCH_ID , self.BATCH.END, item.DURATION, item.PUID)
-                            for item in self.BATCH.ITEMS.values()])     
-                break
-            
-            except sqlite3.OperationalError as ope:
-                if i == 5:
-                    raise RuntimeError("The database was still locked after 5 tries")
-                
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i + 1}/{N}]")
-                time.sleep(5)
-
-
-
-    def updateItemsTable(self, cursor) -> None:
-        """
-        ## Update Items Table
-        Updates rows in the MigrationBatchs table to add:
-
-        [ Import Status | Batch ID | Datashare Date | Size | Duration]
-
-        Where item.PUID is in self.BATCH.ITEMS.values()
-
-        ### Parameters
-            - SQLite3.cursor
-        
-        ### Returns
-            - None
-        """
-        
-        logging.info(f"Updating {len(self.BATCH.ITEMS)} Processed Items in The {self.SOURCE_TABLE} Table...")
-
-        
-        N = 5
-        for i in range(1, N + 1):
-            
-            try:
-                cursor.executemany(f'''
-                        UPDATE {self.SOURCE_TABLE}
-                        SET import_status = ?, batch_id = ?, data_share_date = ?, size = ?, transfer_time = ? 
-                        WHERE puid = ?
-                    ''', [(item.STATUS, self.BATCH.BATCH_ID , self.BATCH.END, item.SIZE, item.DURATION, item.PUID)
-                          for item in self.BATCH.ITEMS.values()])
-        
-                if self.SKIP_MISSING:
-                    n = len(self.BATCH.SKIPPED)
-                    if n > 0:
-                        logging.info(f"Updating {n} Skipped Items in {self.SOURCE_TABLE} Table to have [import_status: MISSING DATASET REFERENCE]...")
-                        cursor.executemany(f'''
-                                    UPDATE {self.SOURCE_TABLE}
-                                    SET import_status = ?, batch_id = ?, data_share_date = ? WHERE puid = ?''',
-                                    [(item.STATUS, self.BATCH.BATCH_ID , self.BATCH.END, item.PUID)
-                                    for item in self.BATCH.SKIPPED.values()])
-
-                    else:
-                        logging.info("This batch had no items missing essential datasets")           
-                
-                break
-            
-            except sqlite3.OperationalError as ope:
-                if i == 5:
-                    raise RuntimeError("The database was still locked after 5 tries")
-                
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i + 1}/{N}]")
-                time.sleep(5)
-        
-        
-    def updateFailedItemsTable(self, cursor) -> None:
-        """
-        ## Update Failed Items Table
-        Inserts the following row in the FailedItems table:
-
-        [ Item ID | Object Type | Batch ID | Import Status | Error | Comment | Date | Puid ]
-
-        ### Parameters
-            - SQLite3.cursor
-        
-        ### Returns
-            - None
-        """
-        failedItems = [(item.ITEM_ID, item.TYPE, self.BATCH.BATCH_ID, item.STATUS, item.ERROR, item.COMMENT, self.formatTime(self.BATCH.END), item.PUID) \
-                        for item in self.BATCH.ITEMS.values() if "FAILED" in item.STATUS]
-        n = len(failedItems)
-
-        N = 5
-        for i in range(1, N + 1):
-            
-            try:
-                if n > 0:
-                    logging.info(f"Appending {n} Items to The FailedItems Table...")
-                    cursor.executemany("""INSERT INTO FailedItems (item_id, object_type, batch_id, import_status, error, comment, data_share_date, puid)
-                            VALUES (?,?,?,?,?,?,?,?)""", failedItems)
-
-                    logging.info(f"There was {n} failed item(s).")
-                
-                else:
-                    logging.info("This batch contained no failed items.")
-                
-                break
-            
-            except sqlite3.OperationalError as ope:
-                if i == 5:
-                    raise RuntimeError("The database was still locked after 5 tries")
-                
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i + 1}/{N}]")
-                time.sleep(5)
-        
-        
-
-    def failureRecoveryUpdate(self, cursor) -> None:
-        """
-        ## Updates Database
-        ### Updates rows in the FailedItems table to change / delete:
-        [ Batch ID | Import Status | Error | Comment | Date ]
-        ### Updates
-
-        Where item.PUID is in self.BATCH.ITEMS.values()
-
-        ### Parameters
-            - SQLite3.cursor
-        
-        ### Returns
-            - None
-        """
-
-        corruptedItems: list[Item] = []
-        recoveredItems: list[Item] = []
-        for i in self.BATCH.ITEMS.values():
-            if "FAILED" in i.STATUS:
-                corruptedItems.append(i)
-            elif "SUCCESS" in i.STATUS:
-                recoveredItems.append(i)
-
-        N = 5
-        for i in range(1, N + 1):
-            
-            try:
-                logging.info(f"Updating {len(corruptedItems)} Corrupt Items in The FailedItems Table...")
-                cursor.executemany('''
-                                UPDATE FailedItems
-                                SET batch_id = ?, import_status = ?, error = ?, comment = ?, data_share_date = ? 
-                                WHERE puid = ?
-                            ''', [(self.BATCH.BATCH_ID, "CORRUPT", item.ERROR, item.COMMENT, self.formatTime(self.BATCH.END), item.PUID)
-                                for item in corruptedItems])
-                
-                
-                logging.info(f"Deleting {len(recoveredItems)} Recovered Items in The FailedItems Table...")
-                cursor.executemany("DELETE FROM FailedItems WHERE puid = ?", [(item.PUID,) for item in recoveredItems])
-
-                logging.info(f"Updating {len(recoveredItems)} Recovered Items in The {self.SOURCE_TABLE} Table...")
-                cursor.executemany(f"""UPDATE {self.SOURCE_TABLE}
-                                    SET import_status = ?, batch_id = ?, data_share_date = ?, size = ?, transfer_time = ? 
-                                    WHERE puid = ?""",
-                                    [(item.STATUS, self.BATCH.BATCH_ID , self.BATCH.END, item.SIZE, item.DURATION, item.PUID)
-                                        for item in recoveredItems])
-                
-                logging.info(f"Updating {len(corruptedItems)} Corrupt Items in The {self.SOURCE_TABLE} Table...")
-                cursor.executemany(f"""UPDATE {self.SOURCE_TABLE}
-                                    SET import_status = ?, batch_id = ?, data_share_date = ?, size = ?, transfer_time = ? 
-                                    WHERE puid = ?""",
-                                    [("CORRUPT", self.BATCH.BATCH_ID , self.BATCH.END, item.SIZE, item.DURATION, item.PUID)
-                                        for item in corruptedItems])
-                
-                break
-                    
-            except sqlite3.OperationalError as ope:
-                if i == 5:
-                    raise RuntimeError("The database was still locked after 5 tries")
-                
-                logging.warning(f"The database is currently locked due to another processes writing in it. Retrying to connect in 5s [Attempt: {i + 1}/{N}]")
-                time.sleep(5)
-        
-
-
+    #     return data
 
     #%% MAIN DATASHARE FUNCTION
     def datashareLoop(self) -> int:
@@ -620,7 +318,7 @@ class Mercury:
             # ---------------------------------------------------------------------------------------------------
             
             start: datetime = datetime.now()
-            startTimeStr = self.formatTime(start)    # Format: YYYY-MM-DD=HH-MM-SS
+            startTimeStr = start.strftime("%Y-%m-%d %H:%M:%S")
             
             if True: # testing this block always true not self.REDO or self.RETRIED_LOOP:
                 suffix = "_FR" if self.QUERY_STATUS == "FAILED" else ""
@@ -628,7 +326,7 @@ class Mercury:
                 puid_file = rf'Items\PUID\PUID_{batch_id}.txt'
                 item_id_file = rf'Items\ItemID\item_list_{batch_id}.txt'
                 report_file = rf'Reports\report_{batch_id}.txt'
-                self.setBatch(Batch(batch_id, self.BATCH_SIZE, report_file, puid_file, item_id_file))
+                self.setBatch(Batch(batch_id, self.BATCH_SIZE, report_file, puid_file, item_id_file, self.queryTeamcenter, self.queryMigration))
                 
 
             
@@ -645,7 +343,7 @@ class Mercury:
             # ---------------------------------------------------------------------------------------------------
             if True: # Testing just keeping this block for all loops not self.REDO or self.OAAT or self.RETRIED_LOOP:  # NEW BATCH
                 logging.info("Executing SQLite query to get batch items...")
-                self.BATCH.fillBatch(self.QUERY_STATUS, self.BATCH_SIZE, self.ORDER, table=self.SOURCE_TABLE)
+                self.BATCH.fillBatch(self.QUERY_STATUS, self.BATCH_SIZE, self.ORDER, self.SOURCE_TABLE)
 
                 # BREAKING CONDITION
                 if len(self.BATCH.ITEMS) == 0:
@@ -656,63 +354,53 @@ class Mercury:
 
                 # VOLUME CHECK POST-PROCESSING
                 # ---------------------------------------------------------------------------------------------------
-                oracleConfigs = [self.ORACLE_USER, self.ORACLE_PASSOWRD, self.ORACLE_HOST, self.ORACLE_PORT, self.ORACLE_SERVICE]
-                self.BATCH.queryOracleVolumeInfo(oracleConfigs, self.SOURCE)
+                self.BATCH.itemVolumePrecheck()
 
                 # PERFORMS MISSING DATASET 
                 # ---------------------------------------------------------------------------------------------------
                 if self.SKIP_MISSING:
-                    self.BATCH.separateSkipped()                    
+                    self.BATCH.separateSkipped()             
                 
                 logging.info(f"The next {len(self.BATCH.ITEMS)} items are:\n")
                 print(displayTabulatedItems(self.BATCH.ITEMS.keys(), 40, 3) + '\n')
             
-
                 # WRITING FILES FOR data_share
                 # ---------------------------------------------------------------------------------------------------
-                with open(self.BATCH.ITEM_ID_FILE, 'w') as IIDfile, \
-                    open(self.BATCH.PUID_FILE, "w") as PUIDfile:
-                    for item_id, object in self.BATCH.ITEMS.items():
-                        IIDfile.write(f"{item_id}\n")
-                        PUIDfile.write(f"{object.PUID}\n")
-                logging.info(f"List of Item IDs written in : {self.BATCH.ITEM_ID_FILE}")
-                logging.info(f"List of PUIDs written in : {self.BATCH.PUID_FILE}")
-
+                self.writeInputFiles()
 
             # RUNNING DATASHARE UTILITY
             # ---------------------------------------------------------------------------------------------------
-            if len(self.BATCH.ITEMS) > 0:
-                if self.OAAT or self.REDO:
-                    self.datashareOAAT()
-                else:
-                    self.datashare()
             
-            else:
-                logging.warning("There was 0 items in the batch, therefore these items will be stepped over and labelled with MISSING DATASET REFERENCE")
-
-
-            # UPDATING DATABASE
-            # ---------------------------------------------------------------------------------------------------
-            reportErrorLevel = self.BATCH.analyseReport(latest_ds_version=self.LATEST_DS, success_rate_threshold=self.SUCCESS_THRESHOLD)
-            self.BATCH.setEnd()
-            
-            match(reportErrorLevel):
+            try:
+                returncode = 0
+                if len(self.BATCH.ITEMS) > 0:
+                    if self.OAAT or self.REDO:
+                        returncode = self.datashareOAAT()
+                    else:
+                        returncode = self.datashare()
                 
-                # NO ERROR
-                case 2001:
-                    # SET BATCH STATUS
+                if returncode != 0:
+                    logging.error("data_share did not return code: 0.")
+                    self.appendBatchLog(f"{self.BATCH.batchId} did not returned code {returncode} from data_share.")
+
+
+            finally:
+            # ANALYSE REPORT
+            # ---------------------------------------------------------------------------------------------------
+                try:
+                    self.BATCH.analyseReport(latest_ds_version=self.LATEST_DS, success_rate_threshold=self.SUCCESS_THRESHOLD)
+                    self.BATCH.setEnd()
+
                     if self.OAAT:
                         self.BATCH.setStatus("SUCCESSFUL IN OAAT")
 
-                        if self.ADAPTING_OAAT:
-                            lastSuccessRates = self.getLastNSuccessRates(2) + [self.BATCH.SUCCESS_RATE]
-                            try:
-                                continueOaat: bool = sum(lastSuccessRates)/len(lastSuccessRates) != 1.0 
-
-                            except TypeError as e:
-                                continueOaat = True
-
-                            self.setOaat(continueOaat)   # IF THE LAST 3 BATCHES HAVE 100% WILL STOP OAAT
+                        # if self.ADAPTING_OAAT:
+                        #     lastSuccessRates = self.getLastNSuccessRates(2) + [self.BATCH.SUCCESS_RATE]
+                        #     try:
+                        #         continueOaat: bool = sum(lastSuccessRates)/len(lastSuccessRates) != 1.0 
+                        #     except TypeError as e:
+                        #         continueOaat = True
+                        #     self.setOaat(continueOaat)   # IF THE LAST 3 BATCHES HAVE 100% WILL STOP OAAT
 
 
                     elif self.REDO:
@@ -726,16 +414,18 @@ class Mercury:
                     if self.RETRIED_LOOP:
                         self.setRetriedloop(False)
 
-                    connection, cursor = self.connect()
+                    connection, cursor = self.queryMigration.connect()
                     if self.QUERY_STATUS == "NULL":
-                        self.updateBatchTable(cursor)
-                        self.updateItemsTable(cursor)
-                        self.updateFailedItemsTable(cursor)
+                        self.queryMigration.updateItemsTable(cursor, self.BATCH, self.SOURCE_TABLE)
+                        self.queryMigration.updateFailedItemsTable(cursor, self.BATCH)
+                        
                     
                     elif self.QUERY_STATUS == "FAILED":
                         self.BATCH.setStatus("SUCCESSFUL FAILURE RECOVERY")
-                        self.updateBatchTable(cursor)
-                        self.failureRecoveryUpdate(cursor)
+                        self.queryMigration.failureRecoveryUpdate(cursor, self.BATCH, self.SOURCE_TABLE)
+
+                    self.queryMigration.updateBatchTable(cursor, self.BATCH)
+                    self.queryMigration.unmarkInProgress(cursor, self.BATCH, self.SOURCE_TABLE)
 
                     connection.commit()
                     connection.close()
@@ -744,7 +434,28 @@ class Mercury:
                     self.cleanMemory()
                     self.COUNT += 1
 
-                case 2501:
+                    
+                except (EmptyReport, FileNotFoundError):
+                    logging.error(f"The report from data_share was empty or not generated. Likely from an unavailable IDSM connection between {self.SOURCE} -> {self.TARGET} is unavailable. Sleeping for 15 minutes and relaunching datashare...")
+                    self.appendBatchLog(f"Empty Report from data_share: {self.BATCH.REPORT_FILE}")
+                    self.BATCH.setStatus("FAILED - EMPTY REPORT FILE")
+                    connection, cursor = self.queryMigration.connect()
+                    self.queryMigration.updateBatchTable(cursor, self.BATCH)
+                    self.queryMigration.unmarkInProgress(cursor, self.BATCH, self.SOURCE_TABLE)
+                    connection.commit()
+                    connection.close()
+
+                    if self.RETRIED_LOOP:
+                        raise RuntimeError("Upon a restart after 15 minutes the datashare was still unable to send objects.")
+                    
+                    logging.info("Setting self.RETRIED_LOOP to True")
+                    self.setRetriedloop(True)
+                    for i in range(15, 0, -1):
+                        logging.info(f"Datashare Loop restarting in {i} minutes.")
+                        time.sleep(60)
+                    self.datashareLoop()
+
+                except FailedSuccessThreshold:
                     if self.REDO or self.OAAT:
                         logging.warning("The push did not pass the minimum success test while being processed One At a Time.")
                         logging.error("Please review the volumes")
@@ -752,45 +463,7 @@ class Mercury:
                     else:
                         logging.warning("The push did not pass the minimum success test. The batch will be resent in REDO mode")
                         self.REDO = True
-                        continue
-                
-                # MISSING REPORT FILE
-                case 2701:                    
-                    if len(self.BATCH.ITEMS) > 0:
-                        logging.warning(f"This batch failed due to a missing report file or disrupted IDSM connection. Entering REDO mode. Items in the batch will be processed one at a time." )
-                        self.setRedo(True)
-                    
-                    else:
-                        # EMPTY BATCH SCENARIO
-                        connection, cursor = self.connect()
-                    
-                        self.BATCH.setStatus("FAILED WITH EMPTY BATCH")
-                        self.updateBatchTable(cursor)
-                        self.updateItemsTable(cursor)
-
-                        connection.commit()
-                        connection.close()      
-                
-                # IDSM ERROR
-                case 2902:
-                    logging.error(f"The IDSM connection between {self.SOURCE} -> {self.TARGET} is unavailable. Sleeping for 15 minutes and relaunching datashare...")
-                    self.BATCH.setStatus("FAILED - IDSM CONNECTION INTERRUPTED")
-                    connection, cursor = self.connect()
-                    self.updateBatchTable(cursor)
-                    connection.close()
-
-                    if self.RETRIED_LOOP:
-                        logging.error(f"The datashare loop was restarted and still cannot get an IDSM connection with {self.TARGET}. Stopping the loop")
-                        return -1
-
-                    else:
-                        logging.info("Setting self.RETRIED_LOOP to True")
-                        self.setRetriedloop(True)
-                        for i in range(15, 0, -1):
-                            logging.info(f"Datashare Loop restarting in {i} minutes.")
-                            time.sleep(60)
-                        self.datashareLoop()
-
+                        continue                    
 
 
     def simpleDatashareLoop(self) -> int:
@@ -837,7 +510,7 @@ class Mercury:
             # ---------------------------------------------------------------------------------------------------
             
             start: datetime = datetime.now()
-            startTimeStr = self.formatTime(start)    # Format: YYYY-MM-DD=HH-MM-SS
+            startTimeStr = start.strftime("%Y-%m-%d %H:%M:%S")
             
             if True: # testing this block always true not self.REDO or self.RETRIED_LOOP:
                 prefix = "WSO_" if self.SOURCE_TABLE == "MigrationWSO" else ""
@@ -846,7 +519,7 @@ class Mercury:
                 puid_file = rf'Items\PUID\PUID_{batch_id}.txt'
                 item_id_file = rf'Items\ItemID\item_list_{batch_id}.txt'
                 report_file = rf'Reports\report_{batch_id}.txt'
-                self.setBatch(Batch(batch_id, self.BATCH_SIZE, report_file, puid_file, item_id_file))
+                self.setBatch(Batch(batch_id, self.BATCH_SIZE, report_file, puid_file, item_id_file, self.queryTeamcenter, self.queryMigration))
                 
 
             
@@ -863,7 +536,7 @@ class Mercury:
             # ---------------------------------------------------------------------------------------------------
             if True: # Testing just keeping this block for all loops not self.REDO or self.OAAT or self.RETRIED_LOOP:  # NEW BATCH
                 logging.info("Executing SQLite query to get batch items...")
-                self.BATCH.fillBatch(self.QUERY_STATUS, self.BATCH_SIZE, self.ORDER, table=self.SOURCE_TABLE)
+                self.BATCH.fillBatch(self.QUERY_STATUS, self.BATCH_SIZE, self.ORDER, self.SOURCE_TABLE)
 
                 # BREAKING CONDITION
                 if len(self.BATCH.ITEMS) == 0:
@@ -878,49 +551,69 @@ class Mercury:
 
                 # WRITING FILES FOR data_share
                 # ---------------------------------------------------------------------------------------------------
-                with open(self.BATCH.PUID_FILE, "w") as PUIDfile:
-                    for puid in self.BATCH.ITEMS.keys():
-                        PUIDfile.write(f"{puid}\n")
-                logging.info(f"List of Item IDs written in : {self.BATCH.ITEM_ID_FILE}")
-                logging.info(f"List of PUIDs written in : {self.BATCH.PUID_FILE}")
-
+                self.writeInputFiles()
 
             # RUNNING DATASHARE UTILITY
             # ---------------------------------------------------------------------------------------------------
-            if len(self.BATCH.ITEMS) > 0:
-                if self.OAAT or self.REDO:
-                    self.datashareOAAT()
-                else:
-                    self.datashare()
+            try:
+                returncode = 0
+                if len(self.BATCH.ITEMS) > 0:
+                    if self.OAAT or self.REDO:
+                        returncode = self.datashareOAAT()
+                    else:
+                        returncode = self.datashare()
+                
+                if returncode != 0:
+                    logging.error("data_share did not return code: 0.")
+                    self.appendBatchLog(f"{self.BATCH.batchId} did not returned code {returncode} from data_share.")
             
-            else:
-                logging.warning("There was 0 items in the batch, therefore these items will be stepped over and labelled with MISSING DATASET REFERENCE")
-
-
             # UPDATING DATABASE
             # --------------------------------------------------------------------------------------------------
-            self.BATCH.setEnd()
-            self.BATCH.skimReportForRate()
+            finally:
+                try:
+                    self.BATCH.setEnd()
+                    self.BATCH.skimReportForRate()
 
-            if self.OAAT:
-                self.BATCH.setStatus("SUCCESSFUL IN OAAT")
+                    if self.OAAT:
+                        self.BATCH.setStatus("SUCCESSFUL IN OAAT")
 
-            else:
-                self.BATCH.setStatus("SUCCESSFUL")
+                    else:
+                        self.BATCH.setStatus("SUCCESSFUL")
 
-            connection, cursor = self.connect()
-            if self.QUERY_STATUS == "NULL":
-                self.updateBatchTable(cursor)
-                self.updateWSOasSent(cursor)
-            
-            connection.commit()
-            connection.close()
+                    connection, cursor = self.queryMigration.connect()
+                    if self.QUERY_STATUS == "NULL":
+                        self.queryMigration.updateWSOasSent(cursor, self.BATCH, self.SOURCE_TABLE)
                     
-            logging.info("Clearing memory")
-            self.cleanMemory()
-            self.COUNT += 1
+                    self.queryMigration.unmarkInProgress(cursor, self.BATCH, self.SOURCE_TABLE)
+                    self.queryMigration.updateBatchTable(cursor, self.BATCH)
 
-                       
+                    connection.commit()
+                    connection.close()
+                            
+                    logging.info("Clearing memory")
+                    self.cleanMemory()
+                    self.COUNT += 1
+
+                except (EmptyReport, FileNotFoundError):
+                    logging.error(f"The report from data_share was empty or not generated. Likely from an unavailable IDSM connection between {self.SOURCE} -> {self.TARGET} is unavailable. Sleeping for 15 minutes and relaunching datashare...")
+                    self.appendBatchLog(f"Empty Report from data_share: {self.BATCH.REPORT_FILE}")
+                    self.BATCH.setStatus("FAILED - EMPTY REPORT FILE")
+                    connection, cursor = self.queryMigration.connect()
+                    self.queryMigration.updateBatchTable(cursor, self.BATCH)
+                    self.queryMigration.unmarkInProgress(cursor, self.BATCH, self.SOURCE_TABLE)
+                    connection.commit()
+                    connection.close()
+
+                    if self.RETRIED_LOOP:
+                        raise RuntimeError("Upon a restart after 15 minutes the datashare was still unable to send objects.")
+
+                    logging.info("Setting self.RETRIED_LOOP to True")
+                    for i in range(15, 0, -1):
+                        logging.info(f"Datashare Loop restarting in {i} minutes.")
+                        time.sleep(60)
+                    self.setRetriedloop(True)
+                    self.simpleDatashareLoop()
+
 
     def failureRecoveryLoop(self):
 
@@ -930,3 +623,20 @@ class Mercury:
         self.SKIP_MISSING: bool = False
         self.QUERY_STATUS: str = "FAILED"
         self.datashareLoop()
+
+    def appendBatchLog(self, message, filename=".\\batches.log"):
+        now = datetime.now()
+        with open(filename, "a") as file:
+            file.write("="*150 + "\n")
+            file.write(f"{now} - {message}\n")
+
+
+    def writeInputFiles(self):
+        logging.info("Writing input files...")
+        with open(self.BATCH.ITEM_ID_FILE, 'w') as IIDfile, \
+            open(self.BATCH.PUID_FILE, "w") as PUIDfile:
+            for item_id, object in self.BATCH.ITEMS.items():
+                IIDfile.write(f"{item_id}\n")
+                PUIDfile.write(f"{object.PUID}\n")
+            logging.info(f"List of Item IDs written in : {self.BATCH.ITEM_ID_FILE}")
+            logging.info(f"List of PUIDs written in : {self.BATCH.PUID_FILE}")

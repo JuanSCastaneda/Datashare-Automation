@@ -1,20 +1,26 @@
 import logging
 from Datashare.Item import Item
+from Datashare.QueryMigration import QueryMigration
+from Datashare.QueryTeamcenter import *
+from Datashare.Exceptions import *
 import re
-import oracledb
 from datetime import datetime
 import sqlite3
+import hashlib
 
 from HelperMethods.HelperMethods import *
 from HelperMethods.Errors import *
-
 class Batch:
-    def __init__(self, batch_id: str, batch_size: int, report_file_loc: str, puid_file_loc: str, item_id_file_loc: str):
+    def __init__(self, batch_id: str, batch_size: int, report_file_loc: str, puid_file_loc: str, item_id_file_loc: str,
+                 query_teamcenter: QueryTeamcenter, query_migration: QueryMigration):
         self.BATCH_ID = batch_id
         self.BATCH_SIZE = batch_size
         self.REPORT_FILE = report_file_loc
         self.PUID_FILE = puid_file_loc
         self.ITEM_ID_FILE = item_id_file_loc
+
+        self.queryTeamcenter: QueryTeamcenter = query_teamcenter
+        self.queryMigration: QueryMigration = query_migration
         
         self.ITEMS: dict[str, Item] = dict()
         self.SKIPPED: dict[str, Item] = dict()
@@ -24,6 +30,7 @@ class Batch:
         self.DURATION: int = None
         self.STATUS: str  = None
         self.SUCCESS_RATE: float = None
+
 
     def setStatus(self, status: str) -> None:
         self.STATUS = status
@@ -64,71 +71,31 @@ class Batch:
     
     
 
-    def fillBatch(self, status:str, size: int, order: str, database= "migration.db", table="MigrationItems") -> None:
+    def fillBatch(self, status:str, size: int, order: str, table="MigrationItems") -> None:
         """
         Fills self.ITEMS dictionary with items with one of the following statuses after transfer:
         - SUCCESS
         - FAILED
         - NULL
 
-        ### Parameters
-        - Status (valid inputs include 'SUCCESS', 'FAILED', 'NULL')
-        - Batch Size (by default None which returns all items with the declared status)
-        - Order (valid inputs: ASC or DESC)
-        - Database Connection (name of SQLite Database)
-        - Table (Name of the table name by default MigrationItems)
-        
-        ### Returns
-        None
+        Additionally marks the objects as in progess
+
+        :params status: Valid inputs include 'SUCCESS', 'FAILED', 'NULL'
+        :params size: Size (by default None which returns all items with the declared status)
+        :params order: Valid inputs: ASC or DESC
+        :params table: Name of the table name by default MigrationItems
 
         """
-        command = ""
-        try:
-            conn = sqlite3.connect(database)
-            cursor = conn.cursor()
-
-            if status == "NULL":
-                command = f"SELECT item_id, puid FROM {table} WHERE import_status is NULL"
-
-            elif status == "SUCCESS" or status == "FAILED":
-                command = f"SELECT item_id, puid FROM {table} WHERE import_status LIKE '{status}%'"
-            
-            else:
-                raise InvalidInput("ERROR 2901: Invalid status input. Please use FAILED, SUCCESS, or NULL.")
-
-            match order.upper():
-                case "ASC":
-                    command += " ORDER BY ROWID ASC"
-                case "DESC":
-                    command += " ORDER BY ROWID DESC"
-                case _:
-                    pass
-
-            
-            if size != 0:
-                command += f" LIMIT {size}"
-                
-            cursor.execute(command)
-
-            items = cursor.fetchall()
-
-            logging.debug("Marking all items as 'IN PROGRESS'")
-            cursor.executemany(f'''
-                                    UPDATE {table}
-                                    SET import_status = ?, batch_id = ?
-                                    WHERE puid = ?
-                                ''', [("IN PROGRESS", self.BATCH_ID, i[1])    # puid
-                                        for i in items])     
-            
-            
-            self.ITEMS = {item_id: Item(item_id, puid) for item_id, puid in items}
-
-        finally:
-            conn.commit()
-            conn.close()
+        data = self.queryMigration.fetchNewBatchData(status, size, order, table, self.BATCH_ID)
+        self.ITEMS = {item_id: Item(item_id, puid) for item_id, puid in data}
 
 
-    def queryOracleVolumeInfo(self, oracle_configs: list, sitename: str, essential_extensions= {'prt', "qaf"}) -> None:
+    def getReferenceInstanceHash(self, item_puid: str, item_revision_puid:str, dataset_puid: str, imanfile_puid: str):
+        string = f"{item_puid}{item_revision_puid}{dataset_puid}{imanfile_puid}"
+        return hashlib.md5(string.encode("utf-8")).hexdigest()
+
+
+    def itemVolumePrecheck(self, essential_extensions= {'prt', "qaf"}) -> None:
         """
         Checks every item in a batch and determines if its files are present.
         If it is absent and marked as an important file, its volume check status will be set to false.
@@ -146,73 +113,55 @@ class Batch:
         """
         start = datetime.now()
         logging.info("Checking that all associated datasets are populated")
-        usr, pwd, host, port, serviceName = oracle_configs
         # Connect to Oracle
-        
-        connection = oracledb.connect(
-            user=f'{usr}',
-            password=f'{pwd}',
-            dsn=f'{host}:{port}/{serviceName}')
     
-        cursor = connection.cursor()
-        placeholder = ", ".join([f":{i+1}" for i in range(len(self.ITEMS))])
-    
-        query = f"""
-            SELECT item.puid, item.pitem_id, relationtype.ptype_name, datasettype.pdatasettype_name,
-                volumes.PWNT_PATH_NAME, imanfile.PSD_PATH_NAME, imanfile.PFILE_NAME
-            
-                FROM PITEM item
-                JOIN PITEMREVISION itemrevision
-                    ON item.puid = itemrevision.RITEMS_TAGU
-                JOIN PIMANRELATION relation
-                    ON itemrevision.puid = relation.RPRIMARY_OBJECTU
-                JOIN PIMANTYPE relationtype
-                    ON relationtype.puid = relation.RRELATION_TYPEU
-                JOIN PDATASET dataset
-                    ON dataset.puid = relation.RSECONDARY_OBJECTU
-                JOIN {"PREF_LIST_0" if sitename.lower().strip() != "shlab10" else "PREF_LIST"} reflist
-                    ON dataset.puid = reflist.puid
-                JOIN PDATASETTYPE datasettype
-                    ON datasettype.puid = dataset.RDATASET_TYPEU
-                JOIN PIMANFILE imanfile
-                    ON reflist.pvalu_0 = imanfile.puid
-                JOIN PIMANVOLUME volumes
-                    ON imanfile.RVOLUME_TAGU = volumes.puid
-            WHERE item.puid IN ({placeholder})"""
-    
-        result = cursor.execute(query, [item.PUID for item in self.ITEMS.values()]).fetchall()
-        connection.close()
+        result = self.queryTeamcenter.queryItemVolumeDetails(
+            [item.PUID for item in self.ITEMS.values()]
+        )
+
+        missingFiles = []
+        dereferencedInstances = []
+
 
         for row in result:
-            _, item_id, relation, datasettype, path, subdir, filename = row
-            pathToFile: Path = Path(path) / subdir / filename
+            itemId, itemPuid, itemRevid, itemRevPuid, relationType, datasetType, datasetName, datasetPuid, filePuid, \
+            volName, directory, filename, originalFilename = row
+
+            pathToFile: Path = Path(directory) / filename
             try:
                 if pathToFile.exists() and pathToFile.is_file():
                     fileSize = pathToFile.stat().st_size
-                    self.ITEMS[item_id].addToSize(fileSize)
+                    self.ITEMS[itemId].addToSize(fileSize)
                 
                 elif pathToFile.exists():
                     logging.info(f"{pathToFile} is not a file")
                     
                 else:
+                    missingFiles.append((filePuid, volName, directory, filename, originalFilename))
+                    instanceHash = self.getReferenceInstanceHash(itemPuid, itemRevPuid, datasetPuid, filePuid)
+                    dereferencedInstances.append((instanceHash, itemId, itemPuid, itemRevid, itemRevPuid, relationType, datasetType, datasetName, datasetPuid, filePuid))
+
                     extention = filename.split('.')[-1]
                     
                     if extention in essential_extensions:
-                        self.ITEMS[item_id].setVolumeCheckStatus(False)
-                        logging.warning(f"ITEM: {item_id} with\n\t\t\tRELATION: {relation}\n\t\t\tDATASET: {datasettype}\
-                        \n\t\t\tMISSING FROM: {path+ '\\' + subdir + '\\'+ filename}\n\n")
-                        logging.info(f"{item_id} is missing {filename} as such its Volume Check Status is set to False\n")
+                        self.ITEMS[itemId].setVolumeCheckStatus(False)
+                        logging.warning(f"ITEM: {itemId} with\n\t\t\tRELATION: {relationType}\n\t\t\tDATASET: {datasetType}\
+                        \n\t\t\tMISSING FROM: {pathToFile}\n\n")
+                        logging.info(f"{itemId} is missing {filename} as such its Volume Check Status is set to False\n")
 
                     else: 
-                        logging.info(f"{item_id} is missing {filename}. But is not defined as a key extention its Volume Check Status is unchanged")
+                        logging.info(f"{itemId} is missing {filename}. But is not defined as a key extention its Volume Check Status is unchanged")
             
             except KeyError:
-                logging.info(f"{item_id} was not found in the collection of items in the Teamcenter Database.")
+                logging.info(f"{itemId} was not found in the collection of items in the Teamcenter Database.")
 
+        logging.info("Inserting rows to DereferencedFiles...")
+        self.queryMigration.insertDerefencedFiles(dereferencedInstances)
+
+        logging.info("Inserting rows to MissingImanfiles...")
+        self.queryMigration.insertMissingFiles(missingFiles)
         logging.info(f"Items validated in volumes successfully in {round((datetime.now() - start).total_seconds(), 2)} seconds.")
 
-
-    # def queryMSSQLVolumeInfo()            To be added when MSSQL functionality is required
 
     def separateSkipped(self) -> None:
         """
@@ -238,7 +187,7 @@ class Batch:
             del self.ITEMS[item_id] 
 
 
-    def analyseReport(self, latest_ds_version: bool, success_rate_threshold=0.25, ) -> int:
+    def analyseReport(self, latest_ds_version: bool, success_rate_threshold=0.25) -> None:
         """
         Reads the report file generated by data_share -report and outputs a list of
         tuples in the form (ID, Type, Status, Error, Comment, Transaction ID)
@@ -252,50 +201,47 @@ class Batch:
         statuses_to_print = []
         N = 0
         nFails = 0
-        
-        try:
-            with open(self.REPORT_FILE) as file:
-                for line in file:
-                    if line.startswith("\n") or line.startswith("Object Id/Name") or line.startswith("*") or line.startswith("(")\
-                        or line.startswith("Parent Process") or line.startswith("Process") or line.startswith("REST"):
-                        continue
-                    else:
-                        split = re.split(r"\s{3,}", line)
-                        n = len(split) 
-                        if n >= 4 and n <= 6:
-                            try:                      
-                                object_id = split[0]
-                                object_type = split[1]
-                                status = split[2]
-                                error = 0
-                                comment = ''
+    
+        with open(self.REPORT_FILE) as file:
+            for line in file:
+                if line.startswith("\n") or line.startswith("Object Id/Name") or line.startswith("*") or line.startswith("(")\
+                    or line.startswith("Parent Process") or line.startswith("Process") or line.startswith("REST"):
+                    continue
+            
+                split = re.split(r"\s{3,}", line)       # CHANGE TO REPORT FORMAT
+                n = len(split) 
+                if n >= 4 and n <= 6:
+                    try:                      
+                        object_id = split[0]
+                        object_type = split[1]
+                        status = split[2]
+                        error = 0
+                        comment = ''
 
-                                if "FAILED" in status:
-                                    error = int(split[3])
-                                    comment = split[4]
-                                    nFails += 1
-                                
-                                transaction_id = int(split[-1].strip())
-
-                            except ValueError:
-                                transaction_id = 0
-                            
-                            try:
-                                if "SUCCESS" in status and latest_ds_version:
-                                    status += " - WITH LATEST DATASET"
-                                    
-                                self.ITEMS[object_id].setTransactionAttributes(object_type, status, error, comment, transaction_id)
-                                statuses_to_print += [f"\tobject_id = {object_id}", f"status = {status}"]
-                            
-                            # To not crash script during inconsistent keys between Report file and database. These items will be marked FAILED WITH INCONSISTENT NAMES
-                            except KeyError:
-                                statuses_to_print += [f"\tobject_id = {object_id} was not found in the database", f"Marking status as NOT FOUND IN REPORT"]
-                                                            
-                            N += 1
+                        if "FAILED" in status:
+                            error = int(split[3])
+                            comment = split[4]
+                            nFails += 1
                         
-        except FileNotFoundError as fnf:
-            logging.error(f"2701: {fnf.filename} was not found. Resubmiting datashare")
-            return 2701
+                        transaction_id = int(split[-1].strip())
+
+                    except ValueError:
+                        transaction_id = 0
+                    
+                    try:
+                        if "SUCCESS" in status and latest_ds_version:
+                            status += " - WITH LATEST DATASET"
+                            
+                        self.ITEMS[object_id].setTransactionAttributes(object_type, status, error, comment, transaction_id)
+                        statuses_to_print += [f"\tobject_id = {object_id}", f"status = {status}"]
+                    
+                    # To not crash script during inconsistent keys between Report file and database. These items will be marked FAILED WITH INCONSISTENT NAMES
+                    except KeyError:
+                        statuses_to_print += [f"\tobject_id = {object_id} was not found in the database", f"Marking status as NOT FOUND IN REPORT"]
+                                                    
+                    N += 1
+
+        # MAY THROW FILE NOT FOUND -> CAUGHT IN MERCURY
         
         if len(statuses_to_print) != 0:
             success_rate = round((1 - nFails / N), 3)
@@ -306,16 +252,16 @@ class Batch:
                 print(displayTabulatedItems(statuses_to_print, 45, 2))
                 logging.info(f"The batch passed the minimum success threshold with a success rate of {success_rate* 100}%")
                 statuses_to_print.clear()
-                return 2001
+                return
 
             else:
-                logging.warning(f"2501: The success rate of the batch was {success_rate* 100}% which is lower than the threshold of {success_rate_threshold* 100}%")
-                return 2501
+                logging.warning(f"The success rate of the batch was {success_rate* 100}% which is lower than the threshold of {success_rate_threshold* 100}%")
+                raise FailedSuccessThreshold(f"The success threshold did not meet the mininum of {success_rate_threshold}")
                 
             
         else:
-            logging.error("2902: No statuses were updated. Please check the IDSM connection between target and source sites")
-            return 2902
+            logging.error("Empty report file. No statuses were updated. Please check the IDSM connection between target and source sites")
+            raise EmptyReport("There was an empty report file. data_share did not conclude correctly")
 
 
     def skimReportForRate(self):
@@ -326,28 +272,26 @@ class Batch:
         N = 0
         nFails = 0
         
-        try:
-            with open(self.REPORT_FILE) as file:
-                for line in file:
-                    if line.startswith("\n") or line.startswith("Object Id/Name") or line.startswith("*") or line.startswith("(")\
-                        or line.startswith("Parent Process") or line.startswith("Process") or line.startswith("REST"):
-                        continue
-                    else:
-                        split = re.split(r"\s{3,}", line)
-                        n = len(split) 
-                        if n >= 4 and n <= 6:                      
-                                
-                            status = split[2]
-                            if "FAILED" in status:
-                                nFails += 1
+        with open(self.REPORT_FILE) as file:
+            for line in file:
+                if line.startswith("\n") or line.startswith("Object Id/Name") or line.startswith("*") or line.startswith("(")\
+                    or line.startswith("Parent Process") or line.startswith("Process") or line.startswith("REST"):
+                    continue
+                else:
+                    split = re.split(r"\s{3,}", line)
+                    n = len(split) 
+                    if n >= 4 and n <= 6:                      
                             
-                        N += 1
+                        status = split[2]
+                        if "FAILED" in status:
+                            nFails += 1
+                        
+                    N += 1
 
+        try:
             successRate = float(1 - nFails / N)
             self.setSuccessRate(successRate)
             logging.info(f"The batches had a success rate of {successRate * 100}%")
 
-                        
-        except FileNotFoundError as fnf:
-            logging.warning(f"Could not find report file...")
-            pass
+        except ZeroDivisionError:
+            raise EmptyReport("The report was found to be empty.")

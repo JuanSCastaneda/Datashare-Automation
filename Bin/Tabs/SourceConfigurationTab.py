@@ -21,11 +21,11 @@ class ConfigurationTab(QWidget):
 
         if data['Oracle'] == True:
             self.RAD_Oracle.setChecked(True)
-            self.ENT_OracleUser.setText(data['OracleUser'])
-            self.ENT_OraclePassword.setText(data['OraclePassword'])
-            self.ENT_Host.setText(data['OracleHost'])
-            self.ENT_Port.setText(data['OraclePort'])
-            self.ENT_ServiceName.setText(data['OracleService'])
+            self.ENT_OracleUser.setText(data['User'])
+            self.ENT_OraclePassword.setText(data['Password'])
+            self.ENT_Host.setText(data['Host'])
+            self.ENT_Port.setText(data['Port'])
+            self.ENT_ServiceName.setText(data['Service'])
         
         # DEV NOTES: ADD MSSQL CONFIG LATER
 
@@ -42,11 +42,11 @@ class ConfigurationTab(QWidget):
         data['TargetSiteName'] = self.ENT_target_site.text()
         data['SQLiteDatabaseName'] = self.ENT_database_name.text()
         data['Oracle'] = True if self.RAD_Oracle.isChecked() == True else False
-        data['OracleUser'] = self.ENT_OracleUser.text()
-        data['OraclePassword'] = self.ENT_OraclePassword.text()
-        data['OracleHost'] = self.ENT_Host.text()
-        data['OraclePort'] = self.ENT_Port.text()
-        data['OracleService'] = self.ENT_ServiceName.text()
+        data['User'] = self.ENT_OracleUser.text()
+        data['Password'] = self.ENT_OraclePassword.text()
+        data['Host'] = self.ENT_Host.text()
+        data['Port'] = self.ENT_Port.text()
+        data['Service'] = self.ENT_ServiceName.text()
         data['ApiPort'] = 8000
 
         path.write_text(json.dumps(data, indent=2), encoding= "utf-8")

@@ -8,38 +8,31 @@ import xml.etree.ElementTree as ET
 
 
 class OracleEditor(DatabaseEditor):
-    def __init__(self, sqlite3_database= r"migration.db", configuration_file= r"Configuration\configuration.json"):
-        super().__init__(sqlite3_database)
-        if self.MIG_HOME is not None:
-            if self.MIG_HOME[-1] == '\\':
-                self.CONFIG_FILE = self.MIG_HOME + configuration_file
-            else:
-                self.CONFIG_FILE = self.MIG_HOME + '\\' + configuration_file
-        else:  
-            self.CONFIG_FILE = configuration_file
+    def __init__(self, configuration_subpath= r"Configuration\configuration.json"):
+        super().__init__(configuration_subpath)
 
-        logging.info(f"Reading {self.CONFIG_FILE}")
+        logging.info(f"Reading {self.confs}")
         
-        with open(self.CONFIG_FILE, "r") as file:
+        with open(self.confs, "r") as file:
             data = json.load(file)
 
         # DATABASE MANAGEMENT SYSTEM VARIABLES
-        self.USER = data['OracleUser']
-        self.PASSWORD = data['OraclePassword']
-        self.HOST = data['OracleHost']
-        self.PORT = data['OraclePort']
-        self.SERVICE = data['OracleService']
+        self.user = data['User']
+        self.password = data['Password']
+        self.host = data['Host']
+        self.port = data['Port']
+        self.service = data['Service']
 
-        logging.info(f"Connecting to {self.HOST}/{self.SERVICE}")
+        logging.info(f"Connecting to {self.host}/{self.service}")
 
 
     def connectOracle(self) -> tuple[oracledb.Connection, oracledb.Cursor]:
         logging.info("Connecting to database...")
         
         connection = oracledb.connect(
-            user=f'{self.USER}',
-            password=f'{self.PASSWORD}',
-            dsn=f'{self.HOST}:{self.PORT}/{self.SERVICE}'
+            user=f'{self.user}',
+            password=f'{self.password}',
+            dsn=f'{self.host}:{self.port}/{self.service}'
         )
 
         cursor = connection.cursor()
@@ -154,9 +147,9 @@ class OracleEditor(DatabaseEditor):
         """
         # Connect to Oracle
         oracleConn = oracledb.connect(
-            user=f'{self.USER}',
-            password=f'{self.PASSWORD}',
-            dsn=f'{self.HOST}:{self.PORT}/{self.SERVICE}'
+            user=f'{self.user}',
+            password=f'{self.password}',
+            dsn=f'{self.host}:{self.port}/{self.service}'
         )
         
         oracleCursor = oracleConn.cursor()
@@ -313,9 +306,9 @@ class OracleEditor(DatabaseEditor):
         logging.info("Connecting to Oracle Database...")
         try:
             connection = oracledb.connect(
-                user=f'{self.USER}',
-                password=f'{self.PASSWORD}',
-                dsn=f'{self.HOST}:{self.PORT}/{self.SERVICE}'
+                user=f'{self.user}',
+                password=f'{self.password}',
+                dsn=f'{self.host}:{self.port}/{self.service}'
             )
 
             logging.info("Querying Volume Information...")
@@ -501,7 +494,7 @@ class OracleEditor(DatabaseEditor):
 
         connection.close()
         print()
-        logging.info(f"For a total size requirement estimate of {totalSize} MBs on {self.HOST}")
+        logging.info(f"For a total size requirement estimate of {totalSize} MBs on {self.host}")
 
         if write:
             with open("sizeEstimate.csv", 'w') as file:

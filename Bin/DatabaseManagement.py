@@ -414,7 +414,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-
     args = sys.argv
     if True: #"-log" in args:
         logging.basicConfig(level=logging.INFO,
