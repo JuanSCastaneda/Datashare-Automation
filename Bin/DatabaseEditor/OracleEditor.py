@@ -130,80 +130,80 @@ class OracleEditor(DatabaseEditor):
 
 
 
-    def populateMigrationItems(self, scoped_types = ('CAEAnalysis', 'CAEGeometry', 'CAEModel', 'Item', 'EItem', 'SItem', 'MENCMachining', 'Document', 'HuskyECO')) -> None:
-        """
-        Populate Migration Items serves to query all items owned by a site, and insert:
+    # def populateMigrationItems(self, scoped_types = ('CAEAnalysis', 'CAEGeometry', 'CAEModel', 'Item', 'EItem', 'SItem', 'MENCMachining', 'Document', 'HuskyECO')) -> None:
+    #     """
+    #     Populate Migration Items serves to query all items owned by a site, and insert:
 
-        [ Item ID | Puid | Object Name | Object Type | Last Modification Date ]
+    #     [ Item ID | Puid | Object Name | Object Type | Last Modification Date ]
 
-        in the MigrationItems table.
+    #     in the MigrationItems table.
 
-        ### Paramters
-            - None
+    #     ### Paramters
+    #         - None
 
-        ### Returns 
-            - None
+    #     ### Returns 
+    #         - None
         
-        """
-        # Connect to Oracle
-        oracleConn = oracledb.connect(
-            user=f'{self.user}',
-            password=f'{self.password}',
-            dsn=f'{self.host}:{self.port}/{self.service}'
-        )
+    #     """
+    #     # Connect to Oracle
+    #     oracleConn = oracledb.connect(
+    #         user=f'{self.user}',
+    #         password=f'{self.password}',
+    #         dsn=f'{self.host}:{self.port}/{self.service}'
+    #     )
         
-        oracleCursor = oracleConn.cursor()
-        logging.info("Starting to query Oracle Database...")
-        start = datetime.now()
-        # Query Oracle
-        oracleCursor.execute(f"""SELECT
-            item.puid,
-            item.pitem_id,
-            wso.pobject_name,
-            wso.pobject_type,
-            pomapp.plast_mod_date
-        FROM PITEM item
-        JOIN PPOM_APPLICATION_OBJECT pomapp on item.puid = pomapp.puid
-        JOIN PWORKSPACEOBJECT wso on item.puid = wso.puid
-        JOIN PPOM_OBJECT po on po.puid = item.puid
-        WHERE po.rowning_siteu is NULL AND 
-        wso.pobject_type IN ({", ".join([f"'{i}'" for i in scoped_types])})
-                    ORDER BY pomapp.plast_mod_date ASC 
-        """)
+    #     oracleCursor = oracleConn.cursor()
+    #     logging.info("Starting to query Oracle Database...")
+    #     start = datetime.now()
+    #     # Query Oracle
+    #     oracleCursor.execute(f"""SELECT
+    #         item.puid,
+    #         item.pitem_id,
+    #         wso.pobject_name,
+    #         wso.pobject_type,
+    #         pomapp.plast_mod_date
+    #     FROM PITEM item
+    #     JOIN PPOM_APPLICATION_OBJECT pomapp on item.puid = pomapp.puid
+    #     JOIN PWORKSPACEOBJECT wso on item.puid = wso.puid
+    #     JOIN PPOM_OBJECT po on po.puid = item.puid
+    #     WHERE po.rowning_siteu is NULL AND 
+    #     wso.pobject_type IN ({", ".join([f"'{i}'" for i in scoped_types])})
+    #                 ORDER BY pomapp.plast_mod_date ASC 
+    #     """)
 
-        logging.info(f"\nThe query took {(datetime.now() - start).seconds} seconds")
-        # Connect to SQLite
-        sqlite_conn = sqlite3.connect(self.SQLITE3)
-        sqlite_cursor = sqlite_conn.cursor()
+    #     logging.info(f"\nThe query took {(datetime.now() - start).seconds} seconds")
+    #     # Connect to SQLite
+    #     sqlite_conn = sqlite3.connect(self.SQLITE3)
+    #     sqlite_cursor = sqlite_conn.cursor()
 
-        # Loop through Oracle results and insert into SQLite
-        logging.info("Starting to populate the SQLite Database...")
-        start = datetime.now()
-        for row in oracleCursor:
-            # unpack Oracle row
-            #object_id, object_type, status, error, comments, transaction_id, last_modification_date = row
-            puid, item_id, object_name, object_type, last_mod_date = row
-            # insert into SQLite
-            sqlite_cursor.execute('''
-                INSERT INTO MigrationItems 
-                (puid, item_id, object_name, object_type, last_mod_date)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (puid, item_id, object_name, object_type, last_mod_date))
+    #     # Loop through Oracle results and insert into SQLite
+    #     logging.info("Starting to populate the SQLite Database...")
+    #     start = datetime.now()
+    #     for row in oracleCursor:
+    #         # unpack Oracle row
+    #         #object_id, object_type, status, error, comments, transaction_id, last_modification_date = row
+    #         puid, item_id, object_name, object_type, last_mod_date = row
+    #         # insert into SQLite
+    #         sqlite_cursor.execute('''
+    #             INSERT INTO MigrationItems 
+    #             (puid, item_id, object_name, object_type, last_mod_date)
+    #             VALUES (?, ?, ?, ?, ?)
+    #         ''', (puid, item_id, object_name, object_type, last_mod_date))
 
-        oracleCursor.close()
-        oracleConn.close()
-        # Commit and close both connections
-        sqlite_conn.commit()
-        sqlite_conn.close()
+    #     oracleCursor.close()
+    #     oracleConn.close()
+    #     # Commit and close both connections
+    #     sqlite_conn.commit()
+    #     sqlite_conn.close()
 
-        logging.info(f"\nThe population took {(datetime.now() - start).seconds} seconds")
-        logging.info("Data copied successfully.")
+    #     logging.info(f"\nThe population took {(datetime.now() - start).seconds} seconds")
+    #     logging.info("Data copied successfully.")
 
 
     def getItems(self, start_date_range: None | str = None,
                       end_date_range: None | str = None,
                       source_table: str = "MigrationItems",
-                      scoped_types = ('CAEAnalysis', 'CAEGeometry', 'CAEModel', 'Item', 'EItem', 'SItem', 'MENCMachining', 'Document')) -> tuple[list[tuple[str]]]:
+                      scope_file: str = r".\Configuration\scope.json") -> tuple[list[tuple[str]]]:
         """
         Performs Delta data operation. Uses the maximum last mod date from the last delta. Ensure that all columns have been migrated to one table
         Args:
@@ -213,6 +213,13 @@ class OracleEditor(DatabaseEditor):
             modified: list of tuples of modified items
             new: list of tuples of new items
         """
+
+        logging.info(f"Getting In scope items from {scope_file}")
+        with open(scope_file, "r") as file:
+            data = json.load(file)
+
+        inScopeItems = data["Items"]
+
 
         # GETTING LAST DELTA DATE
         # =================================================================================
@@ -242,7 +249,7 @@ class OracleEditor(DatabaseEditor):
             JOIN PWORKSPACEOBJECT wso on item.puid = wso.puid
             JOIN PPOM_OBJECT po on po.puid = item.puid
             WHERE po.rowning_siteu is NULL 
-            AND wso.pobject_type IN ({", ".join([f"'{i}'" for i in scoped_types])}) """
+            AND wso.pobject_type IN ({", ".join([f"'{i}'" for i in inScopeItems])}) """
         
         if start_date_range is not None:
             query += f"\n AND pomapp.plast_mod_date >= TO_DATE('{start_date_range}', 'YYYY-MM-DD HH24:MI:SS')"

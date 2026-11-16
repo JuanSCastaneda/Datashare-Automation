@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 import re
 from datetime import datetime
+import os
+import json
 
 class Callable:
     def __init__(self, display_name: str, function, oracle_editor: OracleEditor | None = None):
@@ -78,14 +80,14 @@ def getFilepathInput() -> Path:
 
 def itemDeltaProcedure(editor: OracleEditor):
 
-    print("This procedure requires shifting all items from MigrationItems2 to MigrationItems. Ensure no processes are writing the database.")
-    ui = getConfirmation("Do you want to shift all items to MigrationItems")
-    if not ui:
-        print("Aborted")
-        return
+    # print("This procedure requires shifting all items from MigrationItems2 to MigrationItems. Ensure no processes are writing the database.")
+    # ui = getConfirmation("Do you want to shift all items to MigrationItems")
+    # if not ui:
+    #     print("Aborted")
+    #     return
 
-    print("Shifting all items to MigrationItems")
-    editor.shiftTables("ALL", "1:0", True)
+    # print("Shifting all items to MigrationItems")
+    # editor.shiftTables("ALL", "1:0", True)
     
     print("Which method for calculating date ranges do you want to use? ")
     options = { 1: "Use Calculated Start Date to Present",  # None-None
@@ -147,20 +149,19 @@ def wsoDeltaProcedure(editor: OracleEditor):
     """
     Prompts user to input a date and  
     """
-    
     print("Which valid workspace object do you want to add? ")
-    options = {1: "ALL",
-               2: "HuskyECO",
-               3: "CAEMesh",
-               4: "CAEGeom",
-               5: "CAESolution",
-               6: "NXMotion",
-               7: "NXSimulation",
-               8: "CAEResults",
-               9: "UGCAMPTP",
-               10: "Folder",
-               11: "Back"}
-
+    migHome = os.environ["MIG_HOME"]
+    scopeFile = Path(migHome) / "Configuration" / "scope.json"
+    logging.info(f"Getting In scope items from {scopeFile}")
+    with open(scopeFile, "r") as file:
+        data = json.load(file)
+    
+    inScopeItems = data["WorkspaceObjects"]
+    N = len(inScopeItems) + 1
+    options = {1: "ALL"}
+    for i, value in enumerate(inScopeItems):
+        options[i + 2] = value
+    options[N] = "Back"
     
     ui = getInputLoop(options)
 
@@ -420,7 +421,12 @@ if __name__ == "__main__":
                                 format=" %(asctime)s [%(levelname)s] %(message)s",
                                 datefmt='%H:%M:%S')
 
+    try:
+        migHome = os.environ["MIG_HOME"]
+        main()
+    except KeyError:
+        print("Please set a MIG_HOME enviornment variable to denote your Migration Directory. Ending...")
+
     
-    main()
 
     
