@@ -157,7 +157,7 @@ def wsoDeltaProcedure(editor: OracleEditor):
         data = json.load(file)
     
     inScopeItems = data["WorkspaceObjects"]
-    N = len(inScopeItems) + 1
+    N = len(inScopeItems) + 2
     options = {1: "ALL"}
     for i, value in enumerate(inScopeItems):
         options[i + 2] = value
