@@ -5,6 +5,7 @@ from datetime import datetime
 from .DatabaseEditor import DatabaseEditor
 import json
 import xml.etree.ElementTree as ET
+import re
 
 
 class OracleEditor(DatabaseEditor):
@@ -118,16 +119,30 @@ class OracleEditor(DatabaseEditor):
             logging.info(f"\nThe retrieval took {(datetime.now() - start).seconds} seconds")
 
 
+            pattern = re.compile(r"^(?P<Y>\d{4})-(?P<MM>\d{2})-(?P<D>\d{2}) (?P<H>\d{2}):(?P<m>\d{2}):(?P<s>\d{2})$")
             for line in cursor:
-                puid, object_name, object_type, last_mod_date = line
+                puid, objectName, objectType, lastModDate = line    # lastModDate is already in DateTime format
                 if puid not in existing.keys():
-                    new.append((puid, object_name, object_type, last_mod_date, puid))
+                    new.append((puid, objectName, objectType, lastModDate, puid))
                 else:
-                    if last_mod_date != existing[puid]:
-                        modified.append((puid, object_name, object_type, last_mod_date, puid))
-
+                    existingDateStr = existing[puid]
+                    matchEx = pattern.match(existingDateStr)
+                    if matchEx:
+                        gdEx = matchEx.groupdict()
+                        argsEx = [int(i) for i in [gdEx["Y"],gdEx["MM"],gdEx["D"],gdEx["H"],gdEx["m"],gdEx["s"]]]
+                        existingDatetime = datetime(*argsEx)
+ 
+                        if lastModDate > existingDatetime:
+                            modified.append((puid, objectName, objectType, lastModDate, puid))
+                       
+                    else:
+                        logging.warning(f"PUID: {puid} does not have its last_mod_date in the form YYYY-MM-DD HH:MM:SS")
+                        if str(lastModDate) != existing[puid]:
+                            modified.append((puid, objectName, objectType, lastModDate, puid))
+ 
             print(f"Found {len(new)} new {object_type}")
             print(f"Found {len(modified)} modified {object_type}")
+ 
 
 
         finally:
@@ -277,17 +292,30 @@ class OracleEditor(DatabaseEditor):
 
         modifiedItems = []
         newItems = []
+        pattern = re.compile(r"^(?P<Y>\d{4})-(?P<MM>\d{2})-(?P<D>\d{2}) (?P<H>\d{2}):(?P<m>\d{2}):(?P<s>\d{2})$")
         for row in oracleCursor:
             # unpack Oracle row
-            #object_id, object_type, status, error, comments, transaction_id, last_modification_date = row
-            puid, item_id, object_name, object_type, last_mod_date = row
+            puid, itemId, objectName, objectType, lastModDate = row
             # insert into SQLite
-            if puid in puidsInLite:
-                if itemsInLite[puid] != last_mod_date:
-                    modifiedItems.append((item_id, object_name, object_type, last_mod_date, puid))
-
+            if puid in itemsInLite.keys():
+                existingDateStr = itemsInLite[puid]
+                matchEx = pattern.match(existingDateStr)
+                if matchEx:
+                    gdEx = matchEx.groupdict()
+                    argsEx = [int(i) for i in [gdEx["Y"],gdEx["MM"],gdEx["D"],gdEx["H"],gdEx["m"],gdEx["s"]]]
+                    existingDatetime = datetime(*argsEx)
+   
+                    if lastModDate > existingDatetime:
+                        modifiedItems.append((itemId, objectName, objectType, lastModDate, puid))
+                   
+                else:
+                    logging.warning(f"PUID: {puid} does not have its last_mod_date in the form YYYY-MM-DD HH:MM:SS")
+                    if str(lastModDate) != existingDateStr:
+                        modifiedItems.append((itemId, objectName, objectType, lastModDate, puid))
+               
             else:
-                newItems.append((item_id, object_name, object_type, last_mod_date, puid))
+                newItems.append((itemId, objectName, objectType, lastModDate, puid))
+ 
 
         oracleConnection.close()
 

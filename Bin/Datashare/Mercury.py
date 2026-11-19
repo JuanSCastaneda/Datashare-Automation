@@ -20,7 +20,7 @@ import json
 class Mercury:
     def __init__(self, batch_size:int = 100, oaat: bool = True, skip_missing_datasets: bool = True, source_table:str = "MigrationItems", mode="FULL", status="NULL",
                  order= "ASC", success_threshold=0.25, configurationFile= r"Configuration\configuration.json", adapting_oaat: bool = False, log:bool = False, latest_ds = False,
-                 transfer_option_set = "HuskyMultiSiteExpOptSet"):
+                 transfer_option_set = "HuskyMultiSiteExpOptSet", exclude_files: bool = False):
         with open(configurationFile, "r") as file:
             data = json.load(file)
 
@@ -59,6 +59,7 @@ class Mercury:
         self.LATEST_DS = latest_ds  
         self.TRANSFER_OPTION_SET = transfer_option_set
         self.TARGET_IDSM = None
+        self.EXCLUDE_FILES = exclude_files
 
         # DYNAMIC VARS
         self.BATCH: Batch = None
@@ -110,6 +111,9 @@ class Mercury:
 
     def setLog(self, boolean: bool):
         self.LOG = boolean
+
+    def setExcludeFiles(self, boolean: bool):
+        self.EXCLUDE_FILES = boolean
 
     def cleanMemory(self) -> None:
         """
@@ -189,6 +193,9 @@ class Mercury:
 
         if self.LOG:
             datashareCmd += ["-log"]
+
+        if self.EXCLUDE_FILES:
+            datashareCmd += ["-exclude_files"]
 
         
         logging.info(f"Executing...")
@@ -273,6 +280,8 @@ class Mercury:
         if self.LOG:
             datashareCmd += ["-log"]
 
+        if self.EXCLUDE_FILES:
+            datashareCmd += ["-exclude_files"]
         
         logging.info(f"Executing...")
         print("\n\n\tdata_share")
